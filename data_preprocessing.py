@@ -13,6 +13,7 @@ import numpy as np
 import pickle
 import time
 from sklearn.feature_extraction.text import TfidfVectorizer
+from scipy import sparse
 
 ## Load data
 fn = os.path.join(os.getcwd(), os.path.pardir, 'Dataset/IMDB Dataset.csv')
@@ -55,7 +56,7 @@ print()
 ## Count word per review to determine input length of the LSTM
 df['n_words'] = df['clean_text'].str.split().str.len()
 
-#df = df.head(200)
+#df = df.head(2000)
 
 df['n_words'].hist(bins=[0, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600])
 #plt.show()
@@ -208,14 +209,17 @@ VOCAB_SIZE = 200000
 
 tfidf_transformer = TfidfVectorizer(ngram_range=(1, 3), min_df=0.001, max_features=VOCAB_SIZE)
 
+start = time.time()
 X_tfidf_train = tfidf_transformer.fit_transform(texts_train)
-X_tfidf_train_fn = os.path.join(os.getcwd(), 'Transformed_data/X_tfidf_train.npy')
-np.save(indices_li_train_fn, np.array(X_tfidf_train))
+stop = time.time()
+print(f"Training of TfidfVectorizer and transformation of train data took: {stop - start}")
+X_tfidf_train_fn = os.path.join(os.getcwd(), 'Transformed_data/X_tfidf_train.npz')
+sparse.save_npz(X_tfidf_train_fn, X_tfidf_train)
 X_tfidf_valid = tfidf_transformer.transform(texts_valid)
-X_tfidf_valid_fn = os.path.join(os.getcwd(), 'Transformed_data/X_tfidf_valid.npy')
-np.save(indices_li_valid_fn, np.array(X_tfidf_valid))
+X_tfidf_valid_fn = os.path.join(os.getcwd(), 'Transformed_data/X_tfidf_valid.npz')
+sparse.save_npz(X_tfidf_valid_fn, X_tfidf_valid)
 X_tfidf_test = tfidf_transformer.transform(texts_test)
-X_tfidf_test_fn = os.path.join(os.getcwd(), 'Transformed_data/X_tfidf_test.npy')
-np.save(indices_li_train_fn, np.array(X_tfidf_test))
+X_tfidf_test_fn = os.path.join(os.getcwd(), 'Transformed_data/X_tfidf_test.npz')
+sparse.save_npz(X_tfidf_test_fn, X_tfidf_test)
 
 

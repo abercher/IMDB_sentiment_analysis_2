@@ -6,12 +6,15 @@ import csv
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
+from torch.utils.tensorboard import SummaryWriter
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import f1_score
 from sklearn.metrics import recall_score
 from sklearn.metrics import precision_score
 from sklearn.metrics import roc_auc_score
 import time
+from datetime import date
+import json
 
 
 def print_evaluation_scores(y_true, y_pred, y_prob):
@@ -167,8 +170,10 @@ def main():
 
     ## Loss function definition and Optimization algorithm choice
     loss_function = nn.CrossEntropyLoss()
-    learning_rate = 0.1
-    optimizer = torch.optim.Adagrad(params=classifier.parameters(), lr=learning_rate)
+    learning_rate = 1
+    optimizer = torch.optim.Adadelta(params=classifier.parameters(), lr=learning_rate)
+    optimizer_name = "Adadelta"
+    #optimizer = torch.optim.Adagrad(params=classifier.parameters(), lr=learning_rate)
 
     ## Training of the model
 
@@ -181,12 +186,71 @@ def main():
     #loss.backward()
     #optimizer.step()
 
-    # Real training
-    n_epochs = 10
+    # For TensorBoard
+    writer = SummaryWriter()
 
+    # Real training
     training_time = 0
-    for epoch in range(n_epochs):
-        running_loss = 0
+    # First train the model for a fixed number of epoch with the same learning rate
+    n_epochs = 12
+    acc_max = 0
+    acc_max_epoch = 1
+    acc_seq = []
+    patience = 3
+    learning_rate_factor = 10
+    today = date.today()
+    d1 = today.strftime("%d_%m_%Y")
+
+    model_fn = os.path.join(os.getcwd(), 'Saved_models/lstm_model_state_dict_' + d1 + '.pt')
+    model_description_fn = os.path.join(os.getcwd(), 'Saved_models/lstm_model_description_' + d1 + '.json')
+    training_description = f"Train model for {n_epochs} epochs with fixed learning rate {learning_rate}." \
+                           f" Then train model with early stopping (patience = {patience})" \
+                           f" and devide learning rate by {learning_rate_factor} when accuracy decreases." \
+                           f" Save model at epoch having highest accuracy on validation set."
+
+    def update_max_acc_and_save_best_model(accuracy,
+                                           epoch,
+                                           acc_max_old,
+                                           acc_max_epoch_old,
+                                           save_model=True):
+        """
+        Update maximum accuracy (and epoch where this max occured) and save model when a max is reached
+        :param accuracy:
+        :param epoch:
+        :param acc_max_old:
+        :param acc_max_epoch_old:
+        :param model_description_fn:
+        :param model_fn:
+        :param save_model: bool indicates if one wants to save model (when a max accuracy is reached) or not
+        :return:
+        """
+        if accuracy > acc_max_old:
+            acc_max_old = accuracy
+            acc_max_epoch_old = epoch
+            with open(model_description_fn, encoding='utf-8', mode='w+') as f:
+                json.dump({"epoch": epoch,
+                           "optimizer_name": optimizer_name,
+                           "accuracy": accuracy,
+                           "loss_on_training_set": training_loss,
+                           "training_description": training_description
+                           }, f, indent=4)
+
+            if save_model:
+                torch.save({"epoch": epoch,
+                            "optimizer_name": optimizer_name,
+                            "accuracy": accuracy,
+                            "loss_on_training_set": training_loss,
+                            "training_description": training_description,
+                            "model_state_dict": classifier.state_dict()}, model_fn)
+        return acc_max_old, acc_max_epoch_old
+
+    # Train for a fixed number of epoch
+    for epoch in range(1, n_epochs + 1):
+        print()
+        print("##############")
+        print(f"Epoch {epoch}")
+        print("##############")
+        training_loss = 0
         start = time.time()
         for i, data_batch in enumerate(data_loader_train):
             optimizer.zero_grad()
@@ -195,24 +259,25 @@ def main():
             logits = classifier(x)
             loss = loss_function(logits, torch.tensor(label_batch))
             loss.backward()
+            # For Gradient clipping (in case NaN appear)
+            #torch.nn.utils.clip_grad_norm_(classifier.parameters(), 0.5)
             optimizer.step()
-            running_loss += loss.item()
+            training_loss += loss.item()
+
         stop = time.time()
         training_epoch_time = stop - start
         training_time += training_epoch_time
+
+        writer.add_scalar("Loss/train_" + optimizer_name, training_loss, epoch)  # for tensorboard
+
         print()
-        print("##############")
-        print(f"Epoch {epoch}")
-        print("##############")
-        print()
-        print(f"Loss: {running_loss}")
+        print(f"Loss on training set: {training_loss}")
         print(f"Time to train epoch {epoch}: {training_epoch_time:.1f}")
 
         # Evaluate model on validation set
-        correct = 0
-        total = 0
-
         evaluation_time = 0
+        validation_loss = 0
+
         with torch.no_grad():
             y_true = []
             y_pred = []
@@ -225,6 +290,8 @@ def main():
                 start = time.time()
                 logits = classifier(x)
                 stop = time.time()
+                loss = loss_function(logits, torch.tensor(label_batch))
+                validation_loss += loss
                 evaluation_time += stop - start
                 # In order to use sklearn, we put tensors into lists and turn logits into proba
                 unnormalized_prob = np.exp(logits.numpy())
@@ -234,20 +301,165 @@ def main():
 
                 _, predicted = torch.max(logits.data, 1)
                 y_pred.extend(list(predicted.numpy()))
-                total += label_batch.size(0)
-                correct += (predicted == label_batch).sum().item()
 
-        print(f"Accuracy on the test set: {100 * correct/total}")
+        writer.add_scalar("Loss/valid_" + optimizer_name, validation_loss, epoch)  # for tensorboard
+
+        accuracy = accuracy_score(y_true=y_true, y_pred=y_pred)
+        writer.add_scalar("Accuracy/valid_" + optimizer_name, accuracy, epoch)  # for tensorboard
+
+        acc_seq.append(accuracy)
+        acc_max, acc_max_epoch = update_max_acc_and_save_best_model(accuracy,
+                                                                    epoch,
+                                                                    acc_max,
+                                                                    acc_max_epoch)
+        print()
         print_evaluation_scores(y_true, y_pred, y_prob)
-        print(f"Evaluation time for epoch {epoch}: {evaluation_time}")
+        print()
+        print(f"Loss on validation set: {validation_loss}")
+        print(f"Evaluation time for epoch {epoch}: {evaluation_time:.1f} seconds")
 
+    # Train model a few more epochs using early stopping
+    # and decreasing learning rate by a factor if model doesn't improve
+    early_stopping = False # set it to True to have only a fixed number of epoch (first part of the training implemented above)
+    epoch = n_epochs
+    max_epoch = 40
+
+    def has_to_stop(acc_seq, patience):
+        """
+        Helper function to determine if training should stop because accuracy didn't improve over the
+        last epochs.
+        :param acc_seq: list containing accuracy on validation for each epoch
+        :param patience: int indicating patience level before early stopping
+        :return:
+        """
+        if patience >= len(acc_seq):
+            return False
+        for i in range(patience):
+            if acc_seq[-(i+1)] > acc_seq[-(i+2)]:
+                return False
+        return True
+
+    decrease_lr_li = [False for i in range(n_epochs)]
+
+    def has_to_decrease_lr(acc_seq, decrease_lr_li, learning_rate):
+        """
+        Helper function to determine if learning rate should be divided by a factor.
+        :param acc_seq:
+        :param decrease_lr_li:
+        :param learning_rate:
+        :return:
+        """
+        if len(decrease_lr_li) < 3:
+            return False
+        if acc_seq[-1] < acc_seq[-2]:
+            if decrease_lr_li[-1] or decrease_lr_li[-2] or learning_rate <= 0.0001:
+                return False
+            else:
+                return True
+
+    while not early_stopping:
+        epoch += 1
+
+        print()
+        print("##############")
+        print(f"Epoch {epoch}")
+        print("##############")
+
+        early_stopping = has_to_stop(acc_seq, patience)
+
+        if early_stopping:
+            print()
+            print(f"Early stopping at epoch {epoch}")
+            print()
+            break
+        if epoch >= max_epoch:
+            print()
+            print(f"Maximum number of epochs ({max_epoch}) reached. Stopping training.")
+            print()
+            break
+        decrease_lr = has_to_decrease_lr(acc_seq, decrease_lr_li, learning_rate)
+        decrease_lr_li.append(decrease_lr)
+        if decrease_lr:
+            print()
+            print(f"Change or learning rate")
+            print(f"Previous learning rate: {learning_rate}")
+            learning_rate = learning_rate / learning_rate_factor
+            print(f"New learning rate: {learning_rate}")
+        training_loss = 0
+        start = time.time()
+        for i, data_batch in enumerate(data_loader_train):
+            optimizer.zero_grad()
+            ind_li_batch, label_batch = data_batch
+            x = torch.from_numpy(np.int64(ind_li_batch))
+            logits = classifier(x)
+            loss = loss_function(logits, torch.tensor(label_batch))
+            loss.backward()
+            # For Gradient clipping (in case NaN appear)
+            #torch.nn.utils.clip_grad_norm_(classifier.parameters(), 0.5)
+            optimizer.step()
+            training_loss += loss.item()
+
+        stop = time.time()
+        training_epoch_time = stop - start
+        training_time += training_epoch_time
+
+        writer.add_scalar("Loss/train_" + optimizer_name, training_loss, epoch)  # for tensorboard
+
+        print()
+        print(f"Loss on training set: {training_loss}")
+        print(f"Time to train epoch {epoch}: {training_epoch_time:.1f}")
+
+        # Evaluate model on validation set
+        evaluation_time = 0
+        validation_loss = 0
+        with torch.no_grad():
+            y_true = []
+            y_pred = []
+            y_prob = []
+
+            for data_batch in data_loader_valid:
+                ind_li_batch, label_batch = data_batch
+                y_true.extend(list(label_batch.numpy()))
+                x = torch.from_numpy(np.int64(ind_li_batch))
+                start = time.time()
+                logits = classifier(x)
+                stop = time.time()
+                loss = loss_function(logits, torch.tensor(label_batch))
+                validation_loss += loss
+                evaluation_time += stop - start
+                # In order to use sklearn, we put tensors into lists and turn logits into proba
+                unnormalized_prob = np.exp(logits.numpy())
+                denominator = unnormalized_prob[:, 0] + unnormalized_prob[:, 1]
+                proba_positive = list(unnormalized_prob[:, 1] / denominator)
+                y_prob.extend(proba_positive)
+
+                _, predicted = torch.max(logits.data, 1)
+                y_pred.extend(list(predicted.numpy()))
+
+        writer.add_scalar("Loss/valid_" + optimizer_name, validation_loss, epoch)  # for tensorboard
+
+        accuracy = accuracy_score(y_true=y_true, y_pred=y_pred)
+        writer.add_scalar("Accuracy/valid_" + optimizer_name, accuracy, epoch)  # for tensorboard
+
+        acc_seq.append(accuracy)
+        acc_max, acc_max_epoch = update_max_acc_and_save_best_model(accuracy,
+                                                                    epoch,
+                                                                    acc_max,
+                                                                    acc_max_epoch)
+
+        print()
+        print_evaluation_scores(y_true, y_pred, y_prob)
+        print()
+        print(f"Evaluation time for epoch {epoch}: {evaluation_time:.1f} seconds")
 
     print()
-    print(f"Total training time on {n_epochs} epochs: {training_time:.1f} seconds")
+    print(f"Maximum accuracy on validation set was reached at epoch {acc_max_epoch} with value: {acc_max}")
 
+    print()
+    print(f"Total training time on {epoch} epochs: {training_time:.1f} seconds")
+
+    writer.flush()# for tensorboard
+    writer.close()
 
 if __name__ == "__main__":
     main()
-
-
-

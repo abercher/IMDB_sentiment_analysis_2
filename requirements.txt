@@ -2,3 +2,5 @@ torch==1.7.0+cpu
 pandas==1.1.*
 matplotlib==3.3.*
 scikit-learn==0.23.*
+torchvision==0.8.*
+tensorboard==2.4.*

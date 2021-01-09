@@ -15,6 +15,8 @@ from sklearn.metrics import roc_auc_score
 import time
 from datetime import date
 import json
+import sys
+import warnings
 
 
 def print_evaluation_scores(y_true, y_pred, y_prob):
@@ -193,12 +195,11 @@ def main():
 
     use_early_stopping = False# decide if early stopping should be used or not
 
-    use_annealing = False# decide if annealing should be used or not
-    learning_rate_factor = 10
-    if use_annealing:
-        lr_schedule = "annealing"
+    lr_schedule_type = "cyclical"
+    if lr_schedule_type == "fixed_learning_rate":
+        use_lr_updater = False
     else:
-        lr_schedule = "fixed_learning_rate"
+        use_lr_updater = True
 
     n_fixed_epochs = 12# Minimum number of epochs. Learning rate is fixed during these epochs.
 
@@ -209,7 +210,7 @@ def main():
     early_stopping = False
     patience = 3
 
-    max_epoch = 40
+    max_epoch = 50
 
     today = date.today()
     d1 = today.strftime("%d_%m_%Y")
@@ -218,7 +219,7 @@ def main():
     model_description_fn = os.path.join(os.getcwd(), 'Saved_models/lstm_model_description_' + d1 + '.json')
     training_description = f"Train model for {n_fixed_epochs} epochs with fixed learning rate {learning_rate}." \
                            f" Then train model with early stopping (patience = {patience})" \
-                           f" and devide learning rate by {learning_rate_factor} when accuracy decreases." \
+                           f" and {lr_schedule_type} learning rate schedule when accuracy decreases." \
                            f" Save model at epoch having highest accuracy on validation set."
 
     def update_max_acc_and_save_best_model(accuracy,
@@ -283,7 +284,7 @@ def main():
 
         writer.add_scalar("Learning_rate_" + optimizer_name, learning_rate, epoch)  # for tensorboard
 
-        writer.add_scalar("Loss/train_" + optimizer_name + "_" + lr_schedule, training_loss, epoch)  # for tensorboard
+        writer.add_scalar("Loss/train_" + optimizer_name + "_" + lr_schedule_type, training_loss, epoch)  # for tensorboard
 
         print()
         print(f"Loss on training set: {training_loss}")
@@ -317,10 +318,10 @@ def main():
                 _, predicted = torch.max(logits.data, 1)
                 y_pred.extend(list(predicted.numpy()))
 
-        writer.add_scalar("Loss/valid_" + optimizer_name + "_" + lr_schedule, validation_loss, epoch)  # for tensorboard
+        writer.add_scalar("Loss/valid_" + optimizer_name + "_" + lr_schedule_type, validation_loss, epoch)  # for tensorboard
 
         accuracy = accuracy_score(y_true=y_true, y_pred=y_pred)
-        writer.add_scalar("Accuracy/valid_" + optimizer_name + "_" + lr_schedule, accuracy, epoch)  # for tensorboard
+        writer.add_scalar("Accuracy/valid_" + optimizer_name + "_" + lr_schedule_type, accuracy, epoch)  # for tensorboard
 
         acc_seq.append(accuracy)
         acc_max, acc_max_epoch = update_max_acc_and_save_best_model(accuracy,
@@ -339,7 +340,7 @@ def main():
     print('#################################')
 
     # Train model a few more epochs using early stopping
-    # and decreasing learning rate by a factor if model doesn't improve
+    # and modifying learning rate if model doesn't improve on validation set
     epoch = n_fixed_epochs
 
     def has_to_stop(acc_seq, patience):
@@ -357,23 +358,92 @@ def main():
                 return False
         return True
 
-    decrease_lr_li = [False for i in range(n_fixed_epochs)]
+    update_history = [False for _ in range(n_fixed_epochs)]
 
-    def has_to_decrease_lr(acc_seq, decrease_lr_li, learning_rate):
+    class LearningRateUpdater:
         """
-        Helper function to determine if learning rate should be divided by a factor.
-        :param acc_seq:
-        :param decrease_lr_li:
-        :param learning_rate:
-        :return:
+        Implement a cyclical update of learning rate inspired by this paper:
+        https://arxiv.org/abs/1506.01186
+        It can also be used for annealing learning rate.
         """
-        if len(decrease_lr_li) < 3:
-            return False
-        if acc_seq[-1] < acc_seq[-2]:
-            if decrease_lr_li[-1] or decrease_lr_li[-2] or learning_rate <= 0.001:
-                return False
+        update_direction = "forward"
+        lr_position = 0
+        update_history = []
+
+        def __init__(self, lr_li, update_type="annealing", update_history=None):
+            """
+            Initialization
+            :param lr_li: list of float indicating learning rate values
+            :param update_type: type of learning rate update protocol. Possible values are:
+            "annealing": when the lr updater hits the last entry of lr_li, it stops modifying the learning rate
+            "loop": when the lr updater hits the last entry of lr_li, it goes to the first entry at the next update
+            "cyclical": the lr updater goes back and forth the lr_li
+            :param update_history: list of boolean indicating for each epoch if the lr was updated
+            """
+            if not isinstance(lr_li, list) or len(lr_li)==0:
+                sys.exit("Error: incorrect lr_li type or length")
+            lr_good_type_li = [isinstance(lr, float) or isinstance(lr, int) for lr in lr_li]
+            if not all(lr_good_type_li):
+                sys.exit("Error: incorrect learning rate type inside lr_li")
+            self.lr_li = lr_li
+            # indicates if we want to go back to the first learning rate when the last one is reached
+            # or if we change the learning rate going backward with the list
+            if update_type not in {"annealing", "loop", "cyclical"}:
+                sys.exit("Error: incorrect update_type value")
+            self.update_type = update_type
+            if update_history is None:
+                self.update_history = []
             else:
-                return True
+                self.update_history = update_history
+
+        def update_lr(self, acc_seq):
+            if len(self.update_history) < 3:
+                self.update_history.append(False)
+                return self.lr_li[0]
+            # lr not modified if it was modified in one of the two previous epoch
+            elif self.update_history[-1] or self.update_history[-2]:
+                self.update_history.append(False)
+                return self.lr_li[self.lr_position]
+            # lr not modified if accuracy on validation set improved in the last epoch
+            elif acc_seq[-1] >= acc_seq[-2]:
+                self.update_history.append(False)
+                return self.lr_li[self.lr_position]
+            elif self.update_direction == "forward":
+                self.update_history.append(True)
+                if self.lr_position == len(self.lr_li) - 1:
+                    if self.update_type == "loop":
+                        self.lr_position = 0
+                    elif self.update_type == "cyclical":
+                        self.lr_position = max(0, len(self.lr_li) - 2)
+                        self.update_direction = "backward"
+                    elif self.update_type == "annealing":
+                        # Nothing to do in this case
+                        pass
+                    else:
+                        # If we arrive here, there is a problem...
+                        warnings.warn("A problem occurred in the update of the learning rate.")
+                else:
+                    self.lr_position += 1
+                return self.lr_li[self.lr_position]
+            elif self.update_direction == "backward":
+                self.update_history.append(True)
+                if self.lr_position == 0:
+                    self.update_direction = "forward"
+                    self.lr_position = 1
+                else:
+                    self.lr_position -= 1
+                return self.lr_li[self.lr_position]
+            else:
+                warnings.warn("A problem occurred in the update of the learning rate.")
+                return self.lr_li[self.lr_position]
+
+    if lr_schedule_type != "fixed_learning_rate":
+        lr_li = [1, 0.1, 0.01]
+        if learning_rate != lr_li[0]:
+            warnings.warn(f"Initial learning rate is {learning_rate} but first value of lr_updater is {lr_li[0]}")
+        lr_updater = LearningRateUpdater(lr_li=lr_li,
+                                         update_type=lr_schedule_type,
+                                         update_history=update_history)
 
     while not early_stopping:
         epoch += 1
@@ -396,17 +466,17 @@ def main():
         print(f"Epoch {epoch}")
         print("##############")
 
-        # Annealing
-        decrease_lr = has_to_decrease_lr(acc_seq, decrease_lr_li, learning_rate)
-        decrease_lr_li.append(decrease_lr)
-        if decrease_lr and use_annealing:
-            print()
-            print(f"Change or learning rate")
-            print(f"Previous learning rate: {learning_rate}")
-            learning_rate = learning_rate / learning_rate_factor
-            for g in optimizer.param_groups:
-                g['lr'] = learning_rate
-            print(f"New learning rate: {learning_rate}")
+        # Learning rate update
+        if use_lr_updater:
+            old_lr = learning_rate
+            learning_rate = lr_updater.update_lr(acc_seq)
+            if old_lr != learning_rate:
+                print()
+                print(f"Change of learning rate")
+                print(f"Previous learning rate: {old_lr}")
+                for g in optimizer.param_groups:
+                    g['lr'] = learning_rate
+                print(f"New learning rate: {learning_rate}")
 
         writer.add_scalar("Learning_rate_" + optimizer_name, learning_rate, epoch)  # for tensorboard
 
@@ -428,7 +498,7 @@ def main():
         training_epoch_time = stop - start
         training_time += training_epoch_time
 
-        writer.add_scalar("Loss/train_" + optimizer_name + "_" + lr_schedule, training_loss, epoch)  # for tensorboard
+        writer.add_scalar("Loss/train_" + optimizer_name + "_" + lr_schedule_type, training_loss, epoch)  # for tensorboard
 
         print()
         print(f"Loss on training set: {training_loss}")
@@ -461,10 +531,10 @@ def main():
                 _, predicted = torch.max(logits.data, 1)
                 y_pred.extend(list(predicted.numpy()))
 
-        writer.add_scalar("Loss/valid_" + optimizer_name + "_" + lr_schedule, validation_loss, epoch)  # for tensorboard
+        writer.add_scalar("Loss/valid_" + optimizer_name + "_" + lr_schedule_type, validation_loss, epoch)  # for tensorboard
 
         accuracy = accuracy_score(y_true=y_true, y_pred=y_pred)
-        writer.add_scalar("Accuracy/valid_" + optimizer_name + "_" + lr_schedule, accuracy, epoch)  # for tensorboard
+        writer.add_scalar("Accuracy/valid_" + optimizer_name + "_" + lr_schedule_type, accuracy, epoch)  # for tensorboard
 
         acc_seq.append(accuracy)
         acc_max, acc_max_epoch = update_max_acc_and_save_best_model(accuracy,

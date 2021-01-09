@@ -23,7 +23,7 @@ def print_evaluation_scores(y_true, y_pred, y_prob):
     recall = recall_score(y_true=y_true, y_pred=y_pred, average='macro')
     precision = average_precision_score(y_true=y_true, y_score=list(y_prob[:, 1]))
     roc = roc_auc_score(y_true=y_true, y_score=list(y_prob[:, 1]))
-    print(f'accuracy = {acc_sc:.4f}')
+    print(f'Accuracy = {acc_sc:.4f}')
     print(f'F1 score binary = {f1:.4f}')
     print(f'Recall score = {recall:.4f}')
     print(f'Average precision score = {precision:.4f}')
@@ -62,7 +62,7 @@ def main():
     stop = time.time()
     print(f"Training of Logistic Regression took: {stop - start}")
 
-    ## Test model
+    ## Test model on Validation set
 
     y_binary_valid_pred = logreg_clf.predict(X_tfidf_valid)
     y_binary_valid_proba = logreg_clf.predict_proba(X_tfidf_valid)
@@ -72,6 +72,17 @@ def main():
     stop = time.time()
 
     print(f"Evaluation on validation set took: {stop - start}")
+
+    ## Test model on Test set
+
+    y_binary_test_pred = logreg_clf.predict(X_tfidf_test)
+    y_binary_test_proba = logreg_clf.predict_proba(X_tfidf_test)
+
+    start = time.time()
+    print_evaluation_scores(y_binary_test, y_binary_test_pred, y_binary_test_proba)
+    stop = time.time()
+
+    print(f"Evaluation on test set took: {stop - start}")
 
 
 if __name__ == "__main__":

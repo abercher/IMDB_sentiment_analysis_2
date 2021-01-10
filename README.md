@@ -69,11 +69,11 @@ For the initial LSTM model taken from the previous iteration of this project
 (GloVe Frozen Embedding, LSTM, 10 epochs, learning rate 0.1, Adagrad)
 the metrics on the validation set were
 
-Accuracy = 0.8676
-F1 score binary = 0.8692
-Recall score = 0.8833
-Average precision score = 0.8556
-Air under the ROC = 0.9325
+Accuracy = 0.8676  
+F1 score binary = 0.8692  
+Recall score = 0.8833  
+Average precision score = 0.8556  
+Air under the ROC = 0.9325  
 
 #### Best performing model when changing only optimization
 

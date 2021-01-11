@@ -267,20 +267,20 @@ def main():
 
     model_name = classifier.__name__
 
-    train_and_evaluate_pytorch_model(classifier=classifier,
-                                     data_loader_train=data_loader_train,
-                                     data_loader_valid=data_loader_valid,
-                                     optimizer=optimizer,
-                                     optimizer_name=optimizer_name,
-                                     model_name=model_name,
-                                     learning_rate=learning_rate,
-                                     max_epoch=max_epoch,
-                                     use_early_stopping=use_early_stopping,
-                                     use_lr_updater=use_lr_updater,
-                                     lr_schedule_type=lr_schedule_type,
-                                     n_fixed_epochs=n_fixed_epochs,
-                                     patience=patience,
-                                     lr_li=lr_li)
+    #train_and_evaluate_pytorch_model(classifier=classifier,
+    #                                 data_loader_train=data_loader_train,
+    #                                 data_loader_valid=data_loader_valid,
+    #                                 optimizer=optimizer,
+    #                                 optimizer_name=optimizer_name,
+    #                                 model_name=model_name,
+    #                                 learning_rate=learning_rate,
+    #                                 max_epoch=max_epoch,
+    #                                 use_early_stopping=use_early_stopping,
+    #                                 use_lr_updater=use_lr_updater,
+    #                                 lr_schedule_type=lr_schedule_type,
+    #                                 n_fixed_epochs=n_fixed_epochs,
+    #                                 patience=patience,
+    #                                 lr_li=lr_li)
 
     ###############################################################################################
     ## Third model: 1D Max Pooling
@@ -373,6 +373,103 @@ def main():
 
     model_name = classifier.__name__
 
+    train_and_evaluate_pytorch_model(classifier=classifier,
+                                     data_loader_train=data_loader_train,
+                                     data_loader_valid=data_loader_valid,
+                                     optimizer=optimizer,
+                                     optimizer_name=optimizer_name,
+                                     model_name=model_name,
+                                     learning_rate=learning_rate,
+                                     max_epoch=max_epoch,
+                                     use_early_stopping=use_early_stopping,
+                                     use_lr_updater=use_lr_updater,
+                                     lr_schedule_type=lr_schedule_type,
+                                     n_fixed_epochs=n_fixed_epochs,
+                                     patience=patience,
+                                     lr_li=lr_li)
+
+    ###############################################################################################
+    ## Forth model: Double layer LSTM
+    ###############################################################################################
+
+    ## Define the neural network architecture
+
+    class GloveDoubleLSTMClassifier(nn.Module):
+        """
+        LSTM on top of frozen embeddings initialized with GloVe vectors.
+        """
+        __name__ = "GloveLSTMBasic"
+
+        def __init__(self, glove_embeddings, lstm_hidden_dim, keep_prob):
+            super(GloveDoubleLSTMClassifier, self).__init__()
+            _, self.emb_dim = glove_embeddings.shape
+            glove_embeddings = torch.FloatTensor(glove_embeddings)
+            self.embeddings = nn.Embedding.from_pretrained(embeddings=glove_embeddings)
+            self.embeddings.weight.requires_grad_(False) #Embeddings are frozen
+            self.lstm_hidden_dim = lstm_hidden_dim
+            self.lstm = nn.LSTM(input_size=self.emb_dim,
+                                hidden_size=lstm_hidden_dim,
+                                num_layers=2,
+                                batch_first=True,
+                                bidirectional=False)
+            self.dropout = nn.Dropout(1-keep_prob)
+            #self.hidden2bin = nn.Linear(lstm_hidden_dim, 2)# For simple LSTM
+            self.hidden2bin = nn.Linear(lstm_hidden_dim*2, 2)# For Bi-LSTM
+
+        def forward(self, input):
+            batch_size = input.shape[0]
+            # Sequence of (batches of) indices turned into sequence of (batches of) embeddings
+            # Input dimensions: (batch size (e.g. 100), input sequence length (e.g. 300))
+            # Output dimensions: (batch size, input sequence length, embedding dimension (e.g. 100)
+            emb_vect_seq = self.embeddings(input)
+            # Sequence of (batches of) embeddings turned into one hidden state (and one cell state which isn't used)
+            # As explained in this page:
+            # https://pytorch.org/tutorials/beginner/nlp/sequence_models_tutorial.html
+            # there is no need to explicitly loop over the word embeddings.
+            # Since we only care about the hidden output for the last word of the input sequence
+            # Input dimensions: (batch size, input sequence length, embedding dimension)
+            # Output dimensions: (batch size, 1, LSTM hidden dimension (e.g. 64))
+            _, hidden = self.lstm(emb_vect_seq)
+            hidden = hidden[0]
+            # Drop-out: Element randomly assigned to zero with probability p
+            hidden = self.dropout(hidden)
+            # Hidden state turned into logits
+            # Input dimensions: (batch size, LSTM hidden dimension)
+            # Output (batch size, 2)
+            #logits = self.hidden2bin(hidden.view(batch_size, self.lstm_hidden_dim))# For simple LSTM
+            logits = self.hidden2bin(hidden.view(batch_size, self.lstm_hidden_dim*2))# For Bi-LSTM
+
+            return logits
+
+    classifier = GloveDoubleLSTMClassifier(glove_embeddings=glove_word_vectors,
+                                            keep_prob=0.7,
+                                            lstm_hidden_dim=64)
+
+    ## Loss function definition and Optimization algorithm choice
+    learning_rate = 1
+    optimizer = torch.optim.Adadelta(params=classifier.parameters(), lr=learning_rate)
+    optimizer_name = "Adadelta"
+
+    ## Training of the model
+
+    use_early_stopping = False  # decide if early stopping should be used or not
+
+    lr_schedule_type = "cyclical"
+    if lr_schedule_type == "fixed_learning_rate":
+        use_lr_updater = False
+    else:
+        use_lr_updater = True
+
+    lr_li = [1, 0.1, 0.01]
+
+    n_fixed_epochs = 12  # Minimum number of epochs. Learning rate is fixed during these epochs.
+
+    patience = 3
+
+    max_epoch = 40
+
+    model_name = classifier.__name__
+
     #train_and_evaluate_pytorch_model(classifier=classifier,
     #                                 data_loader_train=data_loader_train,
     #                                 data_loader_valid=data_loader_valid,
@@ -387,8 +484,6 @@ def main():
     #                                 n_fixed_epochs=n_fixed_epochs,
     #                                 patience=patience,
     #                                 lr_li=lr_li)
-
-
 
 
 if __name__ == "__main__":

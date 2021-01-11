@@ -95,7 +95,7 @@ Air under the ROC = 0.9466
 
 
 ### Observations
-* The choice of the optimizer can have a big impact on the performance of the model.
+* The **choice of the optimizer** can have a big impact on the performance of the model.
 While vanilla SGD, Adagrad, and Adadelta gave similar performances (between 0.84 and 0.875
   accuracy on validation set), Adam didn't manage to properly tune the parameters:
   performances from one epoch to the next fluctuated a lot from one epoch to
@@ -104,16 +104,24 @@ While vanilla SGD, Adagrad, and Adadelta gave similar performances (between 0.84
   particularly poorly with fixed learning rate 1, with the model clearly not learning
   anything even after 40 epochs.
   
-* Adadelta seemed to consistently provide the best results for the initial model (0.8763 ac8uracy
+* **Adadelta** seemed to consistently provide the best results for the initial model (0.8763 ac8uracy
   on validation set), accross the different learning rate schedules.
   
-* Using annealing or cyclical learning rate seemed to give slightly better results and a faster convergence than fixed learning rate.
+* Using **annealing** or **cyclical** learning rate seemed to give slightly better results and a faster convergence than
+  fixed learning rate (even if one tries several values).
 
-* Trying out different optimizer, learning rates schedules, and number of epochs
+* Playing with the **optimization methods** (trying out different optimizer, learning rates schedules, and number of epochs)
   allowed the accuracy to go from to go from 0.8676 (Adagrad, 10 epochs, fixed learning rate 0.1)
-  to 0.8783 (Adadelta, 30 epochs, fixed learning rate 1), so 1% accuracy increase.
+  to 0.8783 (Adadelta, 30 epochs, fixed learning rate 1), so a **1% accuracy increase** on the validation set.
   
-* Simply replacing the LSTM layer by a Bi-LSTM resulted in a model enable to learn
+* Replacing the LSTM layer by a **Bi-LSTM** and using a **1D maxpooling** layer on top of it
+  allowed the accuracy to reach 0.8893 accuracy on validation set (Adadelta, 40 epochs, cyclical learning rate [1,
+  0.1, 0.01]), so a **1% accuracy increase** on validation set compared to the previous architecture.
+  The simple addition of the maxpooling layer (without turning the LSTM into a Bi-LSTM)
+  already improve the models allowing it to reach 0.8868 accuracy on validation set (Adadelta,
+  40 epochs, cyclical [1, 0.1, 0.01]).
+  
+* Simply **replacing the LSTM layer by a Bi-LSTM one** resulted in a model enable to learn
   (accuracy on validation set staying close to 0.5). I interpret this result in the
   following way: since the next layer (fully connected layer) uses only the output
   of the (Bi-)LSTM layer for the last token, which is the concatenation of the output
@@ -133,6 +141,13 @@ While vanilla SGD, Adagrad, and Adadelta gave similar performances (between 0.84
   giving a chance to the backward layer to output information regarding the whole
   sequence) and then to the fully connected layer, then performance are even
   better than the simple LSTM.
+  
+* Here are a couple of **unsuccessful attempts** (models which didn't learn anything
+  and stayed very close to 0.5 accuracy):
+  * Replacing LSTM layer by Bi-LSTM (without any other modification).
+  * Replacing GloVe pretrained embeddings frozen layer by randomly initialized
+    trainable embeddings layer.
+  * Adding a second layer of LSTM on top of the first.  
   
 * The time needed to train one epoch seems inversely correlated with the accuracy
   obtained.

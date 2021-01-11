@@ -2,39 +2,40 @@
 
 ## Introduction
 This project builds upon a similar project I did in 2018. Back then
-My goal was mainly to get familiar with the 3 main python programming libraries
+my goal was mainly to get familiar with the 3 main python programming libraries
 used in deep learning (Keras, TensorFlow, and Pytorch). I used the 
 IMDB movie reviews data set and implemented a model based on LSTM and
 GloVes embedding to perform sentiment analysis (binary classification).
-In December 2021, I decided to start again this project but put the focus
+In December 2020, I decided to start again this project but to put this time the focus
 on the optimization of the Neural Networks used. Unlike in my previous
-project, I will use only Pytorch for deep learning. My goals are:
+project, I use only Pytorch for deep learning. My goals are:
 * Get more familiar with the process of tuning the parameters of a neural
 network and training it.
   
-* Experimenting with several deep learning architectures and try to beat
+* Experimenting with several deep learning architectures and try to beat a simple
+  but efficient baseline (the best model used in the previous iteration of the project):
+  TF-IDF + logistic regression.
 * Modifying the initial architecture and measure the impact on the performance.
-a simple but efficient baseline (the best one obtained in my previous project).
 
 ## Data
 I downloaded the IMDB movie reviews data from Kaggle at:
 https://www.kaggle.com/lakshmi25npathi/imdb-dataset-of-50k-movie-reviews
 
 In order to compare different models I split the data into a 70/15/15
-train/valid/test format. The validation set was use to compare neural networks
+train/valid/test format. The validation set was used to compare neural networks
 with different architecture and/or optimization methods. The test set is used
 only to compare (at the end of the project) the performance of the best neural
 network with the baseline.
 
 ## Baseline
 In order to assess if the NN based model obtained, performed well, I used a strong
-baseline based on a simple model: TF-IDF vectorization followed by logistic regression,
+baseline based on a simple model: data cleaning, TF-IDF vectorization followed by logistic regression,
 achieving 0.9025 accuracy on the validation set and 0.8981 accuracy on the test set.
 
 ## Models tested
 The primary goal being to get familiar with the optimization process, I decided first
 compare many training set-ups (choice of optimizer + choice of learning rate + number of epochs)
-on the same model. I reused the same model I had used before. Here is its pipeline
+on the same model. I reused the same model I had used before. Here is its pipeline:
 * Data cleaning (removal of punctuation and HTML tags)
 * Keep only 300 first tokens and use padding
 * frozen pretrained GloVe
@@ -45,6 +46,8 @@ on the same model. I reused the same model I had used before. Here is its pipeli
 ## Results and observations
 
 ### Metrics
+Here are a few metrics giving an idea of the respective performances of some models I tested.
+For each model, I only present the results obtained for the epoch giving the highest accuracy.
 
 #### Baseline
 For the baseline model, the metrics on validation were
@@ -91,6 +94,18 @@ F1 score binary = 0.8799
 Recall score = 0.8956  
 Average precision score = 0.8648  
 Air under the ROC = 0.9466  
+
+#### Adding Max Pooling and Bi-LSTM
+
+If instead of using only the output for the last token, one uses a 1D Maxpooling layer
+over all the outputs of the LSTM, and one replace the LSTM layer by a Bi-LSTM layer one
+obtains with Adadelta, 40 epochs, cyclical learning rate ([1, 0.1, 0.01]):
+
+Accuracy = 0.8893  
+F1 score binary = 0.8880  
+Recall score = 0.8812  
+Average precision score = 0.8951  
+Air under the ROC = 0.9553  
 
 
 
@@ -150,7 +165,7 @@ While vanilla SGD, Adagrad, and Adadelta gave similar performances (between 0.84
   * Adding a second layer of LSTM on top of the first.  
   
 * The time needed to train one epoch seems inversely correlated with the accuracy
-  obtained.
+  obtained in the given epoch.
 
 
   

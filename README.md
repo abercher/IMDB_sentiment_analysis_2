@@ -165,7 +165,11 @@ While vanilla SGD, Adagrad, and Adadelta gave similar performances (between 0.84
   * Adding a second layer of LSTM on top of the first.  
   
 * The time needed to train one epoch seems inversely correlated with the accuracy
-  obtained in the given epoch.
+  obtained in the given epoch (for a given model).
+  
+* I tried to train a model based on BERT but it is extremely slow, and as I'm using
+  my personal machine, I won't let it run for a month. It takes more than 7 hours
+  for one epoch.
 
 
   

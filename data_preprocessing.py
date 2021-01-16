@@ -152,11 +152,23 @@ n_train = int(0.7*n_total_samples)
 n_valid = int(0.15*n_total_samples)
 n_test = n_total_samples - n_train - n_valid
 
-df = df.sample(frac=1).reset_index(drop=True)
+df = df.sample(frac=1, random_state=666).reset_index(drop=True)
 
 df_train = df.iloc[0: n_train, :]
 df_valid = df.iloc[n_train: n_train+n_valid, :]
 df_test = df.iloc[n_train+n_valid:, :]
+
+## Save train, valid, and test sets under the form of clean text
+df_clean_text_train = df_train[["clean_text"]]
+clean_text_train_fn = os.path.join(os.getcwd(), "Transformed_data/clean_text_train.csv")
+df_clean_text_train.to_csv(clean_text_train_fn)
+df_clean_text_valid = df_valid[["clean_text"]]
+clean_text_valid_fn = os.path.join(os.getcwd(), "Transformed_data/clean_text_valid.csv")
+df_clean_text_valid.to_csv(clean_text_valid_fn)
+df_clean_text_test = df_test[["clean_text"]]
+clean_text_test_fn = os.path.join(os.getcwd(), "Transformed_data/clean_text_test.csv")
+df_clean_text_test.to_csv(clean_text_test_fn)
+
 
 
 ## Save labels

@@ -169,7 +169,23 @@ While vanilla SGD, Adagrad, and Adadelta gave similar performances (between 0.84
   
 * I tried to train a model based on BERT but it is extremely slow, and as I'm using
   my personal machine, I won't let it run for a month. It takes more than 7 hours
-  for one epoch.
+  for one epoch (and around 2 hours to evaluate the model on the validation set).
+  I let it run for 5 days, and it only managed to train the model for 12 epochs.
+  The results were not even at paar with LSTM: the accuracy was oscillating between
+  0.6407 and 0.7415. I decided to stop the training, as it slows down my computer.
+  Maybe the small batch size (10) is responsible. With the LSTM models I was using
+  a batch size of 100 samples. What is certain is that the model has more parameters
+  to learn: even if the BERT layer is frozen, the next layer mapping its output
+  to the logits has input size 768. In comparison, in the LSTM case, this same
+  layer has input size 64. I will need to investigate more to see what was the
+  reason.
+  
+## Next Steps
+* Find a way to run big models. Google Cloud Services could be an option.
+* Understand if batch size has a strong impact on performance or not.
+* Try more sophisticated models as the one described on this page:
+  https://paperswithcode.com/sota/sentiment-analysis-on-imdb
+
 
 
   

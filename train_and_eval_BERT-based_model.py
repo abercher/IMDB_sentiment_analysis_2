@@ -439,7 +439,7 @@ def main():
         Bi-LSTM on top of frozen embeddings initialized with GloVe vectors, followed by 1D max pooling
         on all the outputs of the Bi-LSTM layer.
         """
-        __name__ = "GloVeBiLSTM"
+        __name__ = "BERTbase"
 
         def __init__(self, keep_prob):
             super(BERTBaseClassifier, self).__init__()

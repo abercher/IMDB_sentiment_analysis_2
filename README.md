@@ -1,4 +1,4 @@
-# Sentitment Analysis on IMDB dataset with Pytorch: Training neural networks
+# Sentiment Analysis on IMDB dataset with Pytorch: Training neural networks
 
 ## Introduction
 This project builds upon a similar project I did in 2018. Back then
